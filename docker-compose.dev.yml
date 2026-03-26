@@ -1,0 +1,41 @@
+# OpenSpace Development Docker Compose Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This file enables:
+# - Hot-reload for Python code
+# - Source code mounting
+# - Debug mode
+
+services:
+  openspace-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # Use builder stage for editable install
+    environment:
+      - DEBUG=1
+      - FLASK_DEBUG=1
+    volumes:
+      # Mount source code for development
+      - .:/app:rw
+      # Exclude node_modules and git from mount
+    command: >
+      sh -c "
+        pip install --user -e . &&
+        python -c 'from openspace.dashboard_server import main; main()'
+      "
+
+  openspace-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_PORT=3789
+        - VITE_HOST=0.0.0.0
+        - VITE_API_PROXY_TARGET=http://host.docker.internal:7788
+    volumes:
+      # Mount frontend source for hot-reload
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
+    environment:
+      - WATCHPACK_POLLING=true

@@ -1,0 +1,79 @@
+# OpenSpace Docker Compose Configuration
+# Self-evolving AI agent skill framework
+
+services:
+  # Core Python service - CLI and skill engine
+  openspace-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openspace-core
+    restart: unless-stopped
+    environment:
+      # API Keys (user must provide in .env)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENSPACE_API_KEY=${OPENSPACE_API_KEY:-}
+      # Docker-specific ports
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-7788}
+      - LOCAL_SERVER_PORT=${LOCAL_SERVER_PORT:-5000}
+    ports:
+      # Dashboard API - port 7788 (matches code default)
+      - "${DASHBOARD_PORT:-7788}:7788"
+      # Local server - port 5000 (matches code default)
+      - "${LOCAL_SERVER_PORT:-5000}:5000"
+    volumes:
+      # Mount data directory for skill storage and recordings
+      - openspace-data:/app/data
+      # Mount logs directory
+      - openspace-logs:/app/logs
+      # Mount .env file if it exists
+      - ./data:/app/data:rw
+    # Start the dashboard server (main API endpoint)
+    # Bind to 0.0.0.0 for external access
+    command: ["python", "-c", "from openspace.dashboard_server import create_app, main; import sys; sys.argv = ['dash', '--host', '0.0.0.0', '--port', '7788']; main()"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7788/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - openspace-network
+
+  # Frontend React application
+  openspace-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_PROXY_TARGET=http://openspace-core:7788
+        - VITE_PORT=3789
+    container_name: openspace-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3789}:3789"
+    depends_on:
+      openspace-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3789/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - openspace-network
+
+# Named volumes for persistent data
+volumes:
+  openspace-data:
+    driver: local
+  openspace-logs:
+    driver: local
+
+# Shared network for container communication
+networks:
+  openspace-network:
+    driver: bridge
